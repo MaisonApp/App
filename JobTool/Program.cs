@@ -1,21 +1,11 @@
-﻿using FluentFTP;
-using NPOI.HSSF.UserModel;
-using NPOI.SS.UserModel;
-using NPOI.XSSF.UserModel;
-using System;
-using System.Collections.Generic;
+﻿using System;
 using System.Configuration;
-using System.Data;
-using System.Data.SqlClient;
-using System.Diagnostics;
-using System.Drawing;
-using System.IO;
-using System.Linq;
-using System.Net;
+
 namespace MAISONApp
 {
     public static class Program
     {
+
         private static void Main(string[] args)
         {
             try
@@ -39,5 +29,7 @@ namespace MAISONApp
             }
 
         }
+
+       
     }
 }

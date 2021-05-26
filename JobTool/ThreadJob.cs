@@ -16,6 +16,9 @@ using System.Net;
 using System.Threading;
 using WinSCP;
 using SearchOption = System.IO.SearchOption;
+using MAISONApp.Helper;
+using Newtonsoft.Json.Linq;
+using System.Text;
 
 namespace MAISONApp
 {
@@ -40,73 +43,87 @@ namespace MAISONApp
 
         private void Run()
         {
-            DataSet ds = Utility.ExecuteDataSet("IMEX_Step_GetList", job);
-
-            if (ds != null && ds.Tables.Count > 0 && ds.Tables[0] != null)
+            if (job != 999)
             {
-                foreach (DataRow dr in ds.Tables[0].Rows)
+                DataSet ds = Utility.ExecuteDataSet("IMEX_Step_GetList", job);
+
+                if (ds != null && ds.Tables.Count > 0 && ds.Tables[0] != null)
                 {
-                    step = Convert.ToInt32(dr["Step"].ToString());
-                    string taskType = dr["TaskType"].ToString();
-                    string Ref = dr["Ref"].ToString();
-                    DataSet dsJTP = Utility.ExecuteDataSet("IMEX_GetJobTrackingProcess", job, step);
-                    if (dsJTP.Tables.Count == 0 || ProcessHandle == 1)
+                    foreach (DataRow dr in ds.Tables[0].Rows)
                     {
-                        try
+                        step = Convert.ToInt32(dr["Step"].ToString());
+                        string taskType = dr["TaskType"].ToString();
+                        string Ref = dr["Ref"].ToString();
+                        DataSet dsJTP = Utility.ExecuteDataSet("IMEX_GetJobTrackingProcess", job, step);
+                        if (dsJTP.Tables.Count == 0 || ProcessHandle == 1)
                         {
-                            Console.WriteLine("Processing Job " + job + " step " + step);
-                            switch (taskType)
+                            try
                             {
-                                case "COPY":
-                                    Copy(job, step);
-                                    break;
+                                Console.WriteLine("Processing Job " + job + " step " + step + " taskType " + taskType);
+                                switch (taskType)
+                                {
+                                    case "COPY":
+                                        Copy(job, step);
+                                        break;
 
-                                case "FTP":
-                                    Ftp(job, step);
-                                    break;
+                                    case "FTP":
+                                        Ftp(job, step);
+                                        break;
 
-                                case "IMEX":
-                                    DataFlow(job, step);
-                                    break;
+                                    case "IMEX":
+                                        DataFlow(job, step);
+                                        break;
 
-                                case "SQL":
-                                    Sql(job, step);
-                                    break;
+                                    case "SQL":
+                                        Sql(job, step);
+                                        break;
 
-                                case "E2FF":
-                                    FlatFile(job, step);
-                                    break;
+                                    case "E2FF":
+                                        FlatFile(job, step);
+                                        break;
 
-                                case "CMD":
-                                    Process p = Process.Start(Ref, string.Empty);
-                                    p.WaitForExit();
-                                    break;
-
-                                case "ATM":
-                                    ATM(job, step, Ref);
-                                    break;
+                                    case "CMD":
+                                        Process process = new System.Diagnostics.Process();
+                                        ProcessStartInfo startInfo = new ProcessStartInfo();
+                                        startInfo.WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden;
+                                        startInfo.FileName = "cmd.exe";
+                                        startInfo.Arguments = Ref;
+                                        process.StartInfo = startInfo;
+                                        process.Start();
+                                        break;
+                                    case "API":
+                                        CallApi(job, step);
+                                        break;
+                                    case "ATM":
+                                        ATM(job, step, Ref);
+                                        break;
+                                }
+                                Utility.ExecuteNonQuery("IMEX_UpdateJobSuccess", job, step);
+                                Console.WriteLine("Processing Job " + job + " step " + step + " success!!!");
                             }
-                            Utility.ExecuteNonQuery("IMEX_UpdateJobSuccess", job, step);
-                            Console.WriteLine("Processing Job " + job + " step " + step + " success!!!");
-                        }
-                        catch (Exception e)
-                        {
-                            Console.WriteLine("IMEXApp fail at job {0} - step {1} Error: {2}", job, step, e.Message);
-                            Utility.ExecuteNonQuery("SMS_InsertMsg",
-                                "84",
-                                "0989989674",
-                                string.Format("SGNA03: Job fail at job {0} - step {1}", job, step),
-                                "SGNA03");
-                            Utility.ExecuteNonQuery("EMS_Insert",
-                                "Blue Ocean SGN/SGN/DKSH",
-                                "Dong Dinh Nguyen/SGN/DKSH@DKSH",
-                                "", "",
-                                string.Format("IMEXApp fail at job {0} - step {1}", job, step),
-                                e.Message.Replace('\'', ' '), "");
-                            Utility.ExecuteNonQuery("IMEX_UpdateJobFail", job, step, e.Message.Replace('\'', ' '));
+                            catch (Exception e)
+                            {
+                                Console.WriteLine("IMEXApp fail at job {0} - step {1} Error: {2}", job, step, e.Message);
+                                Utility.ExecuteNonQuery("SMS_InsertMsg",
+                                    "84",
+                                    "0989989674",
+                                    string.Format("SGNA03: Job fail at job {0} - step {1}", job, step),
+                                    "SGNA03");
+                                Utility.ExecuteNonQuery("EMS_Insert",
+                                    "Blue Ocean SGN/SGN/DKSH",
+                                    "Dong Dinh Nguyen/SGN/DKSH@DKSH",
+                                    "", "",
+                                    string.Format("IMEXApp fail at job {0} - step {1}", job, step),
+                                    e.Message.Replace('\'', ' '), "");
+                                Utility.ExecuteNonQuery("IMEX_UpdateJobFail", job, step, e.Message.Replace('\'', ' '));
+                            }
                         }
                     }
                 }
+            }
+            else
+            {
+                
             }
         }
 
@@ -184,8 +201,8 @@ namespace MAISONApp
 
             if (IsAllFile)
             {
-                List<string> lstFile = Directory.GetFiles(localPath,"*.*", SearchOption.AllDirectories).ToList();
-                foreach(string file in lstFile)
+                List<string> lstFile = Directory.GetFiles(localPath, "*.*", SearchOption.AllDirectories).ToList();
+                foreach (string file in lstFile)
                 {
                     try
                     {
@@ -212,7 +229,7 @@ namespace MAISONApp
                             using (BinaryReader reader = new BinaryReader(stream))
                             {
                                 using (BinaryWriter writer = new BinaryWriter(File.OpenWrite(file)))
-                                   {
+                                {
                                     Transfer(reader, writer);
                                 }
                             }
@@ -409,18 +426,27 @@ namespace MAISONApp
                 List<string> lstSourceSQL = ReplaceParameter(reader["SourceSQL"].ToString());
                 foreach (string strSourceSQL in lstSourceSQL)
                 {
-                    if ("Text".Equals(Convert.ToString(reader["SourceConn"])))
+                    String sourceConn = Convert.ToString(reader["SourceConn"]);
+                    String sourceData = Convert.ToString(reader["SourceData"]);
+                    String destConn = Convert.ToString(reader["DestConn"]);
+                    String destData = Convert.ToString(reader["DestData"]);
+                    String destSQL = Convert.ToString(reader["DestSQL"]);
+                    int numOfCols = Convert.ToInt32(reader["NumOfCols"]);
+                    switch (sourceConn)
                     {
-                        DataFlow(Convert.ToString(reader["SourceData"]), strSourceSQL
-                            , Convert.ToString(reader["DestConn"]), Convert.ToString(reader["DestData"])
-                            , Convert.ToString(reader["DestSQL"]), Convert.ToInt32(reader["NumOfCols"]));
-                    }
-                    else
-                    {
-                        DataFlow(Convert.ToString(reader["SourceConn"]), Convert.ToString(reader["SourceData"])
-                            , strSourceSQL, Convert.ToString(reader["DestConn"])
-                            , Convert.ToString(reader["DestData"]), Convert.ToString(reader["DestSQL"])
-                            , Convert.ToInt32(reader["NumOfCols"]));
+                        case "Text":
+                            DataFlow(sourceData, strSourceSQL, destConn, destData, destSQL, numOfCols);
+                            break;
+                        case "json":
+                            string uri = sourceData + strSourceSQL + ".json";
+                            DataTable dataTable = GetDataTabletFromJsonFile(uri);
+                            InsertDataIntoSQL(dataTable, destConn, destData);
+
+                            break;
+
+                        default:
+                            DataFlow(sourceConn, sourceData, strSourceSQL, destConn, destData, destSQL, numOfCols);
+                            break;
                     }
                 }
             }
@@ -558,7 +584,7 @@ namespace MAISONApp
                     {
                         FlatFileCSV(Convert.ToString(reader["SourceConn"]), Convert.ToString(reader["SourceData"])
                             , strSourceSQL, DestFile, Convert.ToBoolean(reader["IsHeader"])
-                                , string.IsNullOrEmpty(Convert.ToString(reader["FormatType"]))? "\t" : Convert.ToString(reader["FormatType"])
+                                , string.IsNullOrEmpty(Convert.ToString(reader["FormatType"])) ? "\t" : Convert.ToString(reader["FormatType"])
                                     , Convert.ToBoolean(reader["IsFileName"]));
                     }
                     else
@@ -829,6 +855,46 @@ namespace MAISONApp
             return lstResult;
         }
 
+        private static DataTable GetDataTabletFromJsonFile(string filePath)
+        {
+            DataTable result = new DataTable();
+            try
+            {
+                using (StreamReader r = new StreamReader(filePath))
+                {
+                    string json = r.ReadToEnd();
+                    JArray jArray = JArray.Parse(json);
+
+                    foreach (var row in jArray)
+                    {
+                        foreach (var jToken in row)
+                        {
+                            var jproperty = jToken as JProperty;
+                            if (jproperty == null) continue;
+                            if (result.Columns[jproperty.Name] == null)
+                                result.Columns.Add(jproperty.Name, typeof(string));
+                        }
+                    }
+                    foreach (var row in jArray)
+                    {
+                        var datarow = result.NewRow();
+                        foreach (var jToken in row)
+                        {
+                            var jProperty = jToken as JProperty;
+                            if (jProperty == null) continue;
+                            datarow[jProperty.Name] = jProperty.Value.ToString();
+                        }
+                        result.Rows.Add(datarow);
+                    }
+                }
+                return result;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(ex.Message);
+            }
+        }
+
         private static DataTable GetDataTabletFromCSVFile(string csv_file_path)
         {
             DataTable csvData = new DataTable();
@@ -867,6 +933,43 @@ namespace MAISONApp
             }
         }
 
+        static void InsertDataIntoSQL(DataTable csvFileData, string SQLConnect, string dataTable)
+        {
+            try
+            {
+                using SqlConnection dbConnection = new SqlConnection(SQLConnect);
+                dbConnection.Open();
+                using SqlBulkCopy s = new SqlBulkCopy(dbConnection);
+                s.DestinationTableName = dataTable;
+                s.BulkCopyTimeout = 0;
+                foreach (var column in csvFileData.Columns)
+                {
+                    String titleColumn = column.ToString();
+
+                    if (titleColumn.Equals("barcode"))
+                    {
+                        titleColumn = "ProductID";
+                        s.ColumnMappings.Add("barcode", titleColumn);
+                    }
+                    if (titleColumn.Equals("compare_at_price"))
+                    {
+                        titleColumn = "FullPrice";
+                        s.ColumnMappings.Add("compare_at_price", titleColumn);
+                    }
+                    if (titleColumn.Equals("price"))
+                    {
+                        titleColumn = "RetailPrice";
+                        s.ColumnMappings.Add("price", titleColumn);
+                    }
+                }
+                s.WriteToServer(csvFileData);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(ex.Message);
+            }
+        }
+
         static void InsertDataIntoSQLServerUsingSQLBulkCopy(DataTable csvFileData, string SQLConnect, string dataTable)
         {
             try
@@ -891,5 +994,21 @@ namespace MAISONApp
         }
 
         #endregion Function
+
+        #region API
+        private void CallApi(int job, int step)
+        {
+            DataSet ds = Utility.ExecuteDataSet("IMEX_API_GetList", job, step);
+            Console.WriteLine("IMEX_API_GetList " + ds.ToString());
+            foreach (DataRow reader in ds.Tables[0].Rows)
+            {
+                string url = reader["SourceConn"].ToString();
+                string typeAuth = reader["TypeAuth"].ToString();
+                string token = reader["Token"].ToString();
+
+                ApiHelper.APIGetUpdatedProduct2(url,typeAuth,token).GetAwaiter().GetResult();
+            }
+        }
+        #endregion
     }
 }
